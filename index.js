@@ -16,7 +16,19 @@ function getSelection(inputLevel,inputCareer,inputLocation){
   }
 }
 
-async function getInfo(){
+async function getAll(){
+  for (const location in courseTree) {
+    for(const level in courseTree[location]){
+      for(const faculty in courseTree[location][level]){
+        for(const career of courseTree[location][level][faculty]){
+          await getInfo([level,faculty,career])
+        }
+      }
+    }
+  }
+}
+
+async function getInfo(info){
   // Init browser
   const browser = await puppeteer.launch({
     headless:true,
@@ -31,11 +43,12 @@ async function getInfo(){
   let response = {};
 
   // Set courseName to the course you want to search, it'll search for all non-elective courses
-  const courseName = "";
+  const courseName = "algoritmos";
   // You HAVE TO set selection, just fill it once with keywords, it's not necessary to write the whole word
   // Career and location MUST be in CAPITAL LETTERS.
   // EXAMPLES OF USAGE: [Pregrado|Doctorado|Postgrados y másteres,COMP|QUÍM|ADM|...,BOG|MEDELLÍN|PAZ|...]
-  const selection = getSelection("Pregrado","SISTEMAS Y COMP","BOG");
+  // const selection = getSelection("Pregrado","SISTEMAS Y COMP","BOG");
+  const selection = info
   
   const selectIds = [`#pt1\\:r1\\:0\\:soc1\\:\\:content`,`#pt1\\:r1\\:0\\:soc2\\:\\:content`,`#pt1\\:r1\\:0\\:soc3\\:\\:content`];
   const url = 'https://sia.unal.edu.co/ServiciosApp/facespublico/public/servicioPublico.jsf?taskflowId=task-flow-AC_CatalogoAsignaturas';
@@ -86,7 +99,7 @@ async function getInfo(){
   }
 
   // Type course name
-  await page.type(`#pt1\\:r1\\:0\\:it11\\:\\:content`,courseName);
+  // await page.type(`#pt1\\:r1\\:0\\:it11\\:\\:content`,courseName);
 
   // Click button to execute search
   await page.waitForFunction(()=>!document.querySelector(".af_button.p_AFDisabled"));
@@ -98,7 +111,7 @@ async function getInfo(){
   
   let courses = await page.$$(".af_commandLink");
   const size = courses.length-1;
-  console.log(`${size} courses found!`);
+  console.log(`${size} course${size>2?"s":""} found!`);
 
   for (let i = 0; i < size; i++) {
     console.time(i);
@@ -174,7 +187,7 @@ async function getInfo(){
       // Save response
       response[`${code}`] = course
     }catch (e){
-      console.log(`${i}: NO INFO FOUND!`);
+      // console.log(`${i}: NO INFO FOUND!`);
       // console.error(e)
     }
 
@@ -191,19 +204,18 @@ async function getInfo(){
       await backButton.click();
     }
     
-
-    console.timeEnd(i);
+    // console.timeEnd(i);
   }
 
   // Log final file
   response = JSON.stringify(response,null,2);
   
-  fs.writeFile('response.json', response, (err) => {
+  fs.writeFile(`${info[0]}.json`, response, (err) => {
       if (err) throw err;
-      console.log('Data written to file');
+      console.log(`DONE: ${info[0]}`);
   });
 
   await browser.close();
 }
 
-getInfo();
+getAll();
