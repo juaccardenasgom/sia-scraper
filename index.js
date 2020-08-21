@@ -28,36 +28,46 @@ async function getAll(){
   }
 }
 
-async function getInfo(info){
+async function getInfo(){
   // Init browser
   const browser = await puppeteer.launch({
     headless:true,
-    ignoreHTTPSErrors:true,
     timeout:0,
     defaultViewport: {
-      width: 1366,
-      height: 768
+      width: 1920,
+      height: 1080
     }
   });
   
   let response = {};
 
   // Set courseName to the course you want to search, it'll search for all non-elective courses
-  const courseName = "algoritmos";
+  const courseName = "siglo";
   // You HAVE TO set selection, just fill it once with keywords, it's not necessary to write the whole word
   // Career and location MUST be in CAPITAL LETTERS.
   // EXAMPLES OF USAGE: [Pregrado|Doctorado|Postgrados y másteres,COMP|QUÍM|ADM|...,BOG|MEDELLÍN|PAZ|...]
-  // const selection = getSelection("Pregrado","SISTEMAS Y COMP","BOG");
-  const selection = info
+  const selection = getSelection("Pregrado","SISTEMAS Y COMP","BOG");
+  const searchElectives = true;
   
-  const selectIds = [`#pt1\\:r1\\:0\\:soc1\\:\\:content`,`#pt1\\:r1\\:0\\:soc2\\:\\:content`,`#pt1\\:r1\\:0\\:soc3\\:\\:content`];
+  if(searchElectives){
+    selection.push("LIBRE ELECCIÓN")
+    selection.push("Por plan de estudios")
+    selection.push("2CLE COMPONENTE DE LIBRE ELECCIÓN")
+  }
+  
+  // const selection = info
+  
+  const selectIds = [`#pt1\\:r1\\:0\\:soc1\\:\\:content`,`#pt1\\:r1\\:0\\:soc2\\:\\:content`,`#pt1\\:r1\\:0\\:soc3\\:\\:content`,
+  `#pt1\\:r1\\:0\\:soc4\\:\\:content`,`#pt1\\:r1\\:0\\:soc5\\:\\:content`,`#pt1\\:r1\\:0\\:soc8\\:\\:content`];
   const url = 'https://sia.unal.edu.co/ServiciosApp/facespublico/public/servicioPublico.jsf?taskflowId=task-flow-AC_CatalogoAsignaturas';
 
   // Go to catalog
   const page = await browser.newPage();
   console.time("open");
   await page.goto(url,{
-    timeout:0
+    timeout:0,
+    waitUntil: "networkidle2",
+    referer:url
   });
   console.timeEnd("open");
 
@@ -68,6 +78,7 @@ async function getInfo(info){
     let selectionOptions = null;
 
     // Wait until options loaded
+
     switch(selection.indexOf(option)){
       case 0:
         selectionOptions = await page.evaluate(()=>document.getElementById("pt1:r1:0:soc1::content").innerText);
@@ -84,6 +95,18 @@ async function getInfo(info){
         });
         selectionOptions = await page.evaluate(()=>document.getElementById("pt1:r1:0:soc3::content").innerText);
         break;
+      case 3: 
+        await page.waitForFunction(()=>!$("#pt1\\:r1\\:0\\:soc4\\:\\:content").is(":disabled"));
+        selectionOptions = await page.evaluate(()=>document.getElementById("pt1:r1:0:soc4::content").innerText);
+        break;
+      case 4: 
+        await page.waitForFunction(()=>$("#pt1\\:r1\\:0\\:soc5\\:\\:content").is(":visible"));
+        selectionOptions = await page.evaluate(()=>document.getElementById("pt1:r1:0:soc5::content").innerText);
+        break;
+      case 5: 
+        await page.waitForFunction(()=>$("#pt1\\:r1\\:0\\:soc8\\:\\:content").is(":visible"));
+        selectionOptions = await page.evaluate(()=>document.getElementById("pt1:r1:0:soc8::content").innerText);
+        break;
     }
 
     // Get available options
@@ -91,23 +114,34 @@ async function getInfo(info){
     const selectValue = `${selectionOptions.indexOf(option)}`;
 
     // Select correct option
-    const selectElement = await page.$(selectIds[selection.indexOf(option)]);
-    await selectElement.click();
-    selectElement.select(selectValue);
+    try{
+      const selectElement = await page.$(selectIds[selection.indexOf(option)]);
+      await selectElement.click();
+      selectElement.select(selectValue);
+    }catch(e){
+      console.log(e)
+    }
 
     console.timeEnd(option);
   }
 
   // Type course name
-  // await page.type(`#pt1\\:r1\\:0\\:it11\\:\\:content`,courseName);
+  if(courseName){
+    console.time(courseName)
+    await page.type(`#pt1\\:r1\\:0\\:it11\\:\\:content`,courseName);
+    console.timeEnd(courseName)
+  }
 
   // Click button to execute search
   await page.waitForFunction(()=>!document.querySelector(".af_button.p_AFDisabled"));
-  const button = await page.$(".af_button_link");
-  button.click();
+  await page.evaluate(`$(".af_button_link")[0].click()`)
 
   // Wait for results to load
-  await page.waitFor(6000);
+  console.time("Results")
+  await page.waitForFunction(()=>$("#pt1\\:r1\\:0\\:pb3").is(":visible"),{
+    timeout:0
+  });
+  console.timeEnd("Results")
   
   let courses = await page.$$(".af_commandLink");
   const size = courses.length-1;
@@ -118,18 +152,21 @@ async function getInfo(info){
     courses = await page.$$(".af_commandLink");
 
     // Visit 
-    const element = courses[i];
+    // const element = courses[i];
     try{
-      await element.click();
+      // await page.evaluate(i=>document.getElementsByClassName("af_commandLink")[i].click(),i)
+      await courses[i].click()
     }catch{
       console.error("Couldn't click on course link");
     }
     
     // Load course info
     try {
-      await page.waitForSelector(".af_showDetailHeader_content0",{
-        timeout: 3000,
+      await page.waitForFunction(()=>$(".detalle.af_panelBox").is(":visible"),{
+        timeout: 0,
       });
+      const hasGroups = await page.evaluate(()=>$(".af_showDetailHeader_content0").length>0)
+      if(!hasGroups) throw new Error("NoGroups")
 
       // Get raw content
       const rawContent = await page.evaluate(() => document.querySelector('#d1').innerText);
@@ -141,9 +178,14 @@ async function getInfo(info){
       const name = courseInfo[0];
       const code = courseInfo[1].replace(")","");
 
+      // Get credits
+      regex = /Créditos:(.*)/g
+      const credits = Number(regex.exec(rawContent)[0].split("Créditos:")[1])
+
       // Init course
       let course = {
         name,
+        credits,
         groups: []
       };
 
@@ -179,7 +221,7 @@ async function getInfo(info){
       for(const obj of course.groups){
         m = regex.exec(rawContent);
         if (m) {
-          m[0] = m[0].replace(/(Fecha:(.*))|Duración/g,"").replace(/(SALA|SALON|SALÓN|LABORATORIO|AUDITORIO)(.*)/g,"@").replace(/\n|\./g,"").replace(/de |a |\:/g,"").split("@").filter(v => v.includes(" "));
+          m[0] = m[0].replace(/(Fecha:(.*))|Duración/g,"").replace(/(AULA|SALA|SALON|SALÓN|Salón|LABORATORIO|AUDITORIO|AUD|Ofi)(.*)/g,"@").replace(/\n|\./g,"").replace(/de |a |\:/g,"").split("@").filter(v => v.includes(" "));
           obj.schedule = m[0];
         }
       }
@@ -192,30 +234,123 @@ async function getInfo(info){
     }
 
     // Go back to course list
-    // await page.waitForSelector(`.af_button`);
-    const backButton = await page.$(`.af_button`);
-    await backButton.click();
+    await page.waitForSelector(`.af_button`);
+    await page.evaluate(()=>$(".af_button").click())
 
     try{
       await page.waitForSelector(".af_selectBooleanCheckbox_native-input",{
-        timeout: 5000 
+        timeout: 0
       });
     }catch{
-      await backButton.click();
+      console.log("CAN'TGOBACK")
     }
     
-    // console.timeEnd(i);
+    console.timeEnd(i);
   }
 
   // Log final file
   response = JSON.stringify(response,null,2);
   
-  fs.writeFile(`${info[0]}.json`, response, (err) => {
+  fs.writeFile(`${new Date().toString().replace(/:| |-|\(|\)/g,"")}.json`, response, (err) => {
       if (err) throw err;
-      console.log(`DONE: ${info[0]}`);
+      console.log(`DONE: ${selection[1]}`);
   });
 
   await browser.close();
 }
 
-getAll();
+// getAll();
+getInfo()
+
+async function initBrowser(config){
+  const { selection, url } = config
+
+  // Instantiate browser
+  const browser = await puppeteer.launch({
+    headless:false,
+    timeout:0,
+    defaultViewport: {
+      width: 1920,
+      height: 1080
+    }
+  });
+
+  const page = await browser.newPage();
+
+  // Go to URL
+  await page.goto(url,{
+    timeout:0,
+    waitUntil: "networkidle2",
+    referer:url
+  });
+
+  // Select drop-list options
+  for (const option of selection) {
+    console.time(option);
+
+    // Wait until options loaded  
+    const i = selection.indexOf(option)
+
+    await page.waitForFunction(`${i>4?"":"!"}$("#pt1\\:r1\\:0\\:soc${i}\\:\\:content").is(":${i>4?"visible":"disabled"}")`,{
+      timeout:0
+    });
+
+
+    // switch(selection.indexOf(option)){
+    //   case 0:
+    //     selectionOptions = await page.evaluate(()=>document.getElementById("pt1:r1:0:soc1::content").innerText);
+    //     break;
+    //   case 1:
+    //     await page.waitForFunction(()=>!document.querySelector(`#pt1\\:r1\\:0\\:soc2\\:\\:content`).disabled,{
+    //       timeout:0
+    //     });
+    //     selectionOptions = await page.evaluate(()=>document.getElementById("pt1:r1:0:soc2::content").innerText);
+    //     break;
+    //   case 2: 
+    //     await page.waitForFunction(()=>!document.querySelector(`#pt1\\:r1\\:0\\:soc3\\:\\:content`).disabled,{
+    //       timeout:0
+    //     });
+    //     selectionOptions = await page.evaluate(()=>document.getElementById("pt1:r1:0:soc3::content").innerText);
+    //     break;
+    //   case 3: 
+    //     await page.waitForFunction(()=>!$("#pt1\\:r1\\:0\\:soc4\\:\\:content").is(":disabled"));
+    //     selectionOptions = await page.evaluate(()=>document.getElementById("pt1:r1:0:soc4::content").innerText);
+    //     break;
+    //   case 4: 
+    //     await page.waitForFunction(()=>$("#pt1\\:r1\\:0\\:soc5\\:\\:content").is(":visible"));
+    //     selectionOptions = await page.evaluate(()=>document.getElementById("pt1:r1:0:soc5::content").innerText);
+    //     break;
+    //   case 5: 
+    //     await page.waitForFunction(()=>$("#pt1\\:r1\\:0\\:soc8\\:\\:content").is(":visible"));
+    //     selectionOptions = await page.evaluate(()=>document.getElementById("pt1:r1:0:soc8::content").innerText);
+    //     break;
+    // }
+
+    // 
+    let selectionOptions = await page.evaluate(`document.getElementById("pt1:r1:0:soc${i!=5?i+1:8}::content").innerText`);
+    selectionOptions = selectionOptions.split("\n")
+
+    // Get available options
+    const selectValue = `${selectionOptions.indexOf(option)}`;
+
+    // Select correct option
+    try{
+      const selectElement = await page.$(selectIds[i]);
+      await selectElement.click();
+      
+      selectElement.select(selectValue);
+    }catch(e){
+      console.log(e)
+    }
+
+    console.timeEnd(option);
+  }
+
+  await browser.close();
+
+}
+
+initBrowser({
+  selection: getSelection("Pregrado","SISTEMAS Y COMP","BOG"),
+  url: 'https://sia.unal.edu.co/ServiciosApp/facespublico/public/servicioPublico.jsf?taskflowId=task-flow-AC_CatalogoAsignaturas'
+})
