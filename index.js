@@ -42,11 +42,11 @@ async function getInfo(){
   let response = {};
 
   // Set courseName to the course you want to search, it'll search for all non-elective courses
-  const courseName = "siglo";
+  const courseName = "";
   // You HAVE TO set selection, just fill it once with keywords, it's not necessary to write the whole word
   // Career and location MUST be in CAPITAL LETTERS.
   // EXAMPLES OF USAGE: [Pregrado|Doctorado|Postgrados y másteres,COMP|QUÍM|ADM|...,BOG|MEDELLÍN|PAZ|...]
-  const selection = getSelection("Pregrado","SISTEMAS Y COMP","BOG");
+  const selection = getSelection("Pre","2879","BOG");
   const searchElectives = true;
   
   if(searchElectives){
@@ -73,56 +73,26 @@ async function getInfo(){
 
   // Select drop-list options
   for (const option of selection) {
-    console.time(option);
-
-    let selectionOptions = null;
+    const i = selection.indexOf(option);
 
     // Wait until options loaded
-
-    switch(selection.indexOf(option)){
-      case 0:
-        selectionOptions = await page.evaluate(()=>document.getElementById("pt1:r1:0:soc1::content").innerText);
-        break;
-      case 1:
-        await page.waitForFunction(()=>!document.querySelector(`#pt1\\:r1\\:0\\:soc2\\:\\:content`).disabled,{
-          timeout:0
-        });
-        selectionOptions = await page.evaluate(()=>document.getElementById("pt1:r1:0:soc2::content").innerText);
-        break;
-      case 2: 
-        await page.waitForFunction(()=>!document.querySelector(`#pt1\\:r1\\:0\\:soc3\\:\\:content`).disabled,{
-          timeout:0
-        });
-        selectionOptions = await page.evaluate(()=>document.getElementById("pt1:r1:0:soc3::content").innerText);
-        break;
-      case 3: 
-        await page.waitForFunction(()=>!$("#pt1\\:r1\\:0\\:soc4\\:\\:content").is(":disabled"));
-        selectionOptions = await page.evaluate(()=>document.getElementById("pt1:r1:0:soc4::content").innerText);
-        break;
-      case 4: 
-        await page.waitForFunction(()=>$("#pt1\\:r1\\:0\\:soc5\\:\\:content").is(":visible"));
-        selectionOptions = await page.evaluate(()=>document.getElementById("pt1:r1:0:soc5::content").innerText);
-        break;
-      case 5: 
-        await page.waitForFunction(()=>$("#pt1\\:r1\\:0\\:soc8\\:\\:content").is(":visible"));
-        selectionOptions = await page.evaluate(()=>document.getElementById("pt1:r1:0:soc8::content").innerText);
-        break;
-    }
-
-    // Get available options
+    await page.waitForFunction(i=>i<=3?!$("#pt1\\:r1\\:0\\:soc"+`${i<5?i+1:8}`+"\\:\\:content").is(":disabled"):$("#pt1\\:r1\\:0\\:soc"+`${i<5?i+1:8}`+"\\:\\:content").is(":visible"),{timeout:0},i);
+    
+    // Get <select> text
+    selectionOptions = await page.evaluate(`document.getElementById("pt1:r1:0:soc${i<5?i+1:8}::content").innerText`);
     selectionOptions = selectionOptions.split("\n");
+
+    // Set <option> value
     const selectValue = `${selectionOptions.indexOf(option)}`;
 
-    // Select correct option
+    // Select <option>  
     try{
-      const selectElement = await page.$(selectIds[selection.indexOf(option)]);
+      const selectElement = await page.$(`#pt1\\:r1\\:0\\:soc${i<5?i+1:8}\\:\\:content`);
       await selectElement.click();
-      selectElement.select(selectValue);
+      await selectElement.select(selectValue);
     }catch(e){
-      console.log(e)
+      throw e
     }
-
-    console.timeEnd(option);
   }
 
   // Type course name

@@ -1,5 +1,3 @@
 node_modules
-*.png
-response.json
-tree.json
-*.yaml
+ss
+outputs
